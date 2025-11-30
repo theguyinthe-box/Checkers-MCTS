@@ -107,6 +107,7 @@ class Checkers:
         reaching King's Row, and kings the man if so.
         """
         state = history[-1]
+        prev_state = history[-2]
         player = int(state[4,0,0])
         xman1, yman1 = np.where(state[0] == 1) # Locations of P1's men
         xking1, yking1 = np.where(state[1] == 1) # Locations of P1's kings
@@ -120,6 +121,9 @@ class Checkers:
         fwd = 1 if player == 0 else -1 # Sets forward direction of player's men
         legal_moves = []
         jump_moves = []
+
+        is_double_jumping = (state[4,0,0] == prev_state[4,0,0])
+
         # Get legal moves including jumps for men
         for x, y in piece_locs[idx]: # Men
             if y+1 < 8 and -1 < x+fwd < 8:
@@ -163,7 +167,7 @@ class Checkers:
                             6, x, y
                     legal_moves.append(temp_state)
             # Check to see if man can jump any of opponent's pieces
-            jump_moves.extend(self._check_jumps(x,y,fwd,state,idx,opp_idx,board,player))
+            jump_moves.extend(self._check_jumps(x,y,fwd,state,idx,opp_idx,board,player,is_double_jumping=is_double_jumping))
         # Get legal moves including jumps for kings
         for x, y in piece_locs[idx+1]: # Kings
             for xmove in range(-1,2,2):        
@@ -193,13 +197,14 @@ class Checkers:
                                     6, x, y
                             legal_moves.append(temp_state)
             # Check to see if king can jump any of opponent's pieces
-            jump_moves.extend(self._check_king_jumps(x,y,state,idx,opp_idx,board,player))
+            jump_moves.extend(self._check_king_jumps(x,y,state,idx,opp_idx,board,player,is_double_jumping=is_double_jumping))
+
         if jump_moves: 
             state[6:10] = 0 # Clear all possible non-jump moves
-            return jump_moves # Jumps are mandatory    
+            return jump_moves # Jumps are mandatory
         return legal_moves
-            
-    def _check_jumps(self,x,y,fwd,state,idx,opp_idx,board,player):
+    
+    def _check_jumps(self,x,y,fwd,state,idx,opp_idx,board,player,is_double_jumping=False):
         """Method intended for internal use.  Checks to see if a jump is 
         possible for a man given its position and the game state.  Function 
         recursively calls itself in case multiple jumps are possible in the 
@@ -211,6 +216,12 @@ class Checkers:
         """
         jump_moves = []
         more_jumps = []
+
+        last_moved_piece = (state[14,0,1],state[14,0,2])
+        if is_double_jumping and (x,y) != last_moved_piece:
+            return []
+
+        # continue...
         for ydir in range(-1,2,2):
             if -1 < y+ydir < 8 and -1 < x+fwd < 8:
                 if state[opp_idx,x+fwd,y+ydir] == 1 or \
@@ -229,7 +240,7 @@ class Checkers:
                                 temp_state[idx,x+2*fwd,y+2*ydir] = 1
                                 more_jumps = self._check_jumps(x+2*fwd,y+2*ydir,
                                                           fwd,temp_state,idx,
-                                                          opp_idx,board,player)
+                                                          opp_idx,board,player,is_double_jumping=True)
                             if more_jumps:
                                 #jump_moves.extend(more_jumps)
                                 more_jumps = [] # Don't toggle player
@@ -254,7 +265,7 @@ class Checkers:
                             jump_moves.append(temp_state)
         return jump_moves
             
-    def _check_king_jumps(self,x,y,state,idx,opp_idx,board,player):
+    def _check_king_jumps(self,x,y,state,idx,opp_idx,board,player,is_double_jumping=False):
         """Method intended for internal use.  Checks to see if a jump is 
         possible for a king given its position and the game state.  Function 
         recursively calls itself in case multiple jumps are possible in the 
@@ -263,6 +274,11 @@ class Checkers:
         """
         jump_moves = []
         more_jumps = []
+
+        last_moved_piece = (state[14,0,1],state[14,0,2])
+        if is_double_jumping and (x,y) != last_moved_piece:
+            return []
+
         for ydir in range(-1,2,2):
             for fwd in range(-1,2,2):
                 if -1 < x+fwd < 8 and -1 < y+ydir < 8:
