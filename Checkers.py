@@ -107,7 +107,13 @@ class Checkers:
         reaching King's Row, and kings the man if so.
         """
         state = history[-1]
-        prev_state = history[-2]
+        
+        if len(history)>1:
+            prev_state = history[-2]
+            is_double_jumping = (state[4,0,0] == prev_state[4,0,0])
+        else:
+            is_double_jumping = False
+
         player = int(state[4,0,0])
         xman1, yman1 = np.where(state[0] == 1) # Locations of P1's men
         xking1, yking1 = np.where(state[1] == 1) # Locations of P1's kings
@@ -121,8 +127,6 @@ class Checkers:
         fwd = 1 if player == 0 else -1 # Sets forward direction of player's men
         legal_moves = []
         jump_moves = []
-
-        is_double_jumping = (state[4,0,0] == prev_state[4,0,0])
 
         # Get legal moves including jumps for men
         for x, y in piece_locs[idx]: # Men
