@@ -16,7 +16,7 @@ cffi=1.14.4=py37h261ae71_0
 chardet=3.0.4=py37h06a4308_1003
 click=7.1.2=py_0
 cryptography=3.3.1=py37h3c74f83_0
-cudatoolkit=10.1.243=0
+cudatoolkit
 cudnn=7.6.5=cuda10.1_0
 cupti=10.1.168=0
 cycler=0.10.0=py37_0
@@ -78,7 +78,7 @@ protobuf=3.13.0.1=py37he6710b0_1
 pyasn1=0.4.8=py_0
 pyasn1-modules=0.2.8=py_0
 pycparser=2.20=py_2
-pygame=1.9.6=pypi_0
+#pygame=1.9.6=pypi_0 -- instead, run pip install pygame
 pyjwt=1.7.1=py37_0
 pyopenssl=20.0.0=pyhd3eb1b0_1
 pyparsing=2.4.7=py_0
