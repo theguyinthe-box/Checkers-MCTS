@@ -24,9 +24,6 @@ from copy import deepcopy
 from tabulate import tabulate
 import time
 
-wasted_time = 0
-
-
 class Checkers:
     """Class to represent a game of Checkers."""
     def __init__(self, neural_net=None):
@@ -60,6 +57,7 @@ class Checkers:
         self.player2_man = 'o'
         self.player2_king = u'\u01D1'
         self.neural_net = neural_net
+        #self.wasted_time = 0
         
     def step(self, next_state):
         """Execute the player's (legal) move.  Check to see if the game
@@ -134,9 +132,8 @@ class Checkers:
         for x, y in piece_locs[idx]: # Men
             # Check to see if man can jump any of opponent's pieces
             jump_moves.extend(self._check_jumps(x,y,fwd,state,idx,opp_idx,board,player,is_double_jumping=is_double_jumping))
-            # if jump_moves:
-            #     continue # Jumps are mandatory, skip normal moves
-            t0 = time.time()
+            if jump_moves:
+                continue # Jumps are mandatory, skip normal moves
             if y+1 < 8 and -1 < x+fwd < 8:
                 if board[x+fwd,y+1] == 0: # Diagonal-right space open
                     temp_state = deepcopy(state)
@@ -177,16 +174,12 @@ class Checkers:
                         temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
                             6, x, y
                     legal_moves.append(temp_state)
-            t1 = time.time()
-            if jump_moves:
-                wasted_time += t1-t0
         # Get legal moves including jumps for kings
         for x, y in piece_locs[idx+1]: # Kings
             # Check to see if king can jump any of opponent's pieces
             jump_moves.extend(self._check_king_jumps(x,y,state,idx,opp_idx,board,player,is_double_jumping=is_double_jumping))
-            # if jump_moves:
-            #     continue # Jumps are mandatory, skip normal moves
-            t0 = time.time()
+            if jump_moves:
+                continue # Jumps are mandatory, skip normal moves
             for xmove in range(-1,2,2):        
                 for ymove in range(-1,2,2):
                     if -1 < x+xmove < 8 and -1 < y+ymove < 8:
@@ -213,9 +206,6 @@ class Checkers:
                                 temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
                                     6, x, y
                             legal_moves.append(temp_state)
-            t1 = time.time()
-            if jump_moves:
-                wasted_time += t1-t0
 
         if jump_moves: 
             state[6:10] = 0 # Clear all possible non-jump moves
@@ -400,7 +390,7 @@ class Checkers:
     def print_board(self):
         """Print a visual representation of the current game state to the 
         console."""
-        print("wasted time:",wasted_time,"ms")
+        #print("wasted time:",self.wasted_time,"seconds")
         player = int(self.state[4,0,0])
         player_mark = self.player1_man if player == 0 else self.player2_man 
         board_pieces = (self.state[0] - self.state[2]) + \
