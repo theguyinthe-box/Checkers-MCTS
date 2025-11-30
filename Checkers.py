@@ -369,11 +369,11 @@ class Checkers:
             for cnt, move in enumerate(reversed(history[-80:])): # Check for draw conditions
                 if np.sum(move[0:4]) != current_num_pieces: 
                     piece_jumped = True
-                    state[5] = cnt / 80 # NN layer representing draw counter
+                    state[5] = cnt / 80 # state tensor layer representing draw counter
                     break
                 if not ((move[0] == state[0]).all() and (move[2] == state[2]).all()):
                     man_moved = True
-                    state[5] = cnt / 80 # NN layer representing draw counter
+                    state[5] = cnt / 80 # state tensor layer representing draw counter
                     break
         if np.sum(state[2:4]) == 0: # All player 2 pieces jumped
             done = True
