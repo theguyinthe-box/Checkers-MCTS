@@ -128,6 +128,7 @@ class MCTSPlayer:
     - PUCT selection criterion with configurable exploration
     - Dirichlet noise for exploration during training
     - Temperature-based move selection for training vs evaluation
+    - GPU-optimized tensor operations with non-blocking transfers
     
     Args:
         game_env: Instance of Checkers game environment.
@@ -172,6 +173,19 @@ class MCTSPlayer:
         
         # Parallel simulation parameters
         self.parallel_simulations = getattr(config, 'parallel_simulations', 1)
+        
+        # Virtual loss for parallel MCTS - encourages exploration of different paths
+        # during batched selection. Higher values = more exploration diversity.
+        self.virtual_loss = getattr(config, 'virtual_loss', 3.0)
+        
+        # GPU optimization: Set model to eval mode once and keep it there
+        self.model.eval()
+        
+        # GPU optimization: Pre-allocate pinned memory for faster CPU->GPU transfer
+        self._use_pinned_memory = (device == 'cuda' or device.startswith('cuda:')) and torch.cuda.is_available()
+        
+        # GPU optimization: Create CUDA stream for async operations if available
+        self._cuda_stream = torch.cuda.Stream() if self._use_pinned_memory else None
     
     def get_action_probs(
         self,
@@ -283,9 +297,17 @@ class MCTSPlayer:
         """
         Run MCTS simulations with batched neural network inference.
         
-        This method collects multiple leaf nodes and evaluates them
-        together in a single batched forward pass through the neural
-        network, better utilizing GPU VRAM.
+        GPU Optimization: Uses virtual loss to ensure parallel selections
+        explore different paths through the tree, resulting in larger
+        batches for neural network inference and better GPU utilization.
+        
+        Virtual loss temporarily penalizes nodes during selection to
+        encourage exploration of different branches when collecting
+        multiple leaves for batched evaluation.
+        
+        Note: This implementation is single-threaded, so there are no race
+        conditions. Virtual loss is applied and removed within the same
+        batch iteration.
         
         Args:
             root: Root node of the search tree.
@@ -293,27 +315,45 @@ class MCTSPlayer:
         """
         num_completed = 0
         batch_size = self.parallel_simulations
+        virtual_loss = self.virtual_loss  # Use configurable value from __init__
         
         while num_completed < self.num_simulations:
             # Collect leaf nodes for batched evaluation
             leaves_to_expand = []
-            search_paths = []
+            nodes_with_virtual_loss = []  # Track nodes for virtual loss removal
+            pending_expansion = set()  # Track nodes already selected for expansion in this batch
             
             # Run selection phase for multiple simulations
             for _ in range(min(batch_size, self.num_simulations - num_completed)):
                 node = root
                 search_path = [node]
+                path_for_virtual_loss = []
                 
                 # Selection: traverse tree until leaf
                 while node.is_expanded() and not node.is_terminal:
                     node = self._select_child(node)
                     search_path.append(node)
+                    # Apply virtual loss to encourage exploring different paths
+                    node.visit_count += 1
+                    node.total_value -= virtual_loss
+                    path_for_virtual_loss.append(node)
                 
                 # Handle terminal or unexpanded nodes
                 if node.is_terminal:
+                    # Remove virtual loss before backpropagating
+                    for vl_node in path_for_virtual_loss:
+                        vl_node.visit_count -= 1
+                        vl_node.total_value += virtual_loss
                     # Terminal nodes get their value immediately
                     self._backpropagate(search_path, node.terminal_value)
                     num_completed += 1
+                elif id(node) in pending_expansion:
+                    # This node is already being expanded in this batch - skip to avoid duplicates
+                    # Remove virtual loss since we're not processing this path
+                    for vl_node in path_for_virtual_loss:
+                        vl_node.visit_count -= 1
+                        vl_node.total_value += virtual_loss
+                    # Don't add to leaves_to_expand or increment num_completed
                 else:
                     # Collect leaf for batched expansion
                     node_history = history.copy()
@@ -323,6 +363,10 @@ class MCTSPlayer:
                     child_states = self.game_env.get_legal_next_states(node_history)
                     
                     if not child_states:
+                        # Remove virtual loss before backpropagating
+                        for vl_node in path_for_virtual_loss:
+                            vl_node.visit_count -= 1
+                            vl_node.total_value += virtual_loss
                         # Terminal state
                         done, outcome = self.game_env.determine_outcome(node_history)
                         node.is_terminal = True
@@ -330,14 +374,23 @@ class MCTSPlayer:
                         self._backpropagate(search_path, node.terminal_value)
                         num_completed += 1
                     else:
+                        pending_expansion.add(id(node))  # Mark as pending expansion
                         leaves_to_expand.append((node, child_states, search_path))
+                        nodes_with_virtual_loss.append(path_for_virtual_loss)
             
             # Batch expand all collected leaves
             if leaves_to_expand:
                 values = self._batch_expand_nodes(leaves_to_expand)
                 
-                # Backpropagate values for each leaf
-                for (node, child_states, search_path), value in zip(leaves_to_expand, values):
+                # Backpropagate values for each leaf and remove virtual loss
+                for (node, child_states, search_path), value, vl_path in zip(
+                    leaves_to_expand, values, nodes_with_virtual_loss
+                ):
+                    # Remove virtual loss
+                    for vl_node in vl_path:
+                        vl_node.visit_count -= 1
+                        vl_node.total_value += virtual_loss
+                    # Now backpropagate the actual value
                     self._backpropagate(search_path, value)
                     num_completed += 1
     
@@ -348,8 +401,8 @@ class MCTSPlayer:
         """
         Expand multiple nodes with batched neural network inference.
         
-        This method processes multiple states in a single forward pass
-        through the neural network, which is more efficient on GPU.
+        GPU Optimization: Uses CUDA streams for async operations and
+        avoids redundant model.eval() calls.
         
         Args:
             leaves: List of (node, legal_states, search_path) tuples.
@@ -364,11 +417,19 @@ class MCTSPlayer:
         states = [node.state for node, _, _ in leaves]
         state_batch = self._states_to_tensor(states)
         
-        # Batch neural network inference
-        self.model.eval()
-        with torch.no_grad():
-            policy_logits, values = self.model(state_batch)
-            policy_probs = torch.softmax(policy_logits, dim=1)
+        # GPU optimization: Use CUDA stream for async inference if available
+        if self._cuda_stream is not None:
+            with torch.cuda.stream(self._cuda_stream):
+                with torch.no_grad():
+                    policy_logits, values = self.model(state_batch)
+                    policy_probs = torch.softmax(policy_logits, dim=1)
+            # Synchronize to ensure results are ready
+            self._cuda_stream.synchronize()
+        else:
+            # Batch neural network inference (model.eval() already called in __init__)
+            with torch.no_grad():
+                policy_logits, values = self.model(state_batch)
+                policy_probs = torch.softmax(policy_logits, dim=1)
         
         policy_probs_np = policy_probs.cpu().numpy().reshape(
             -1, 
@@ -393,15 +454,25 @@ class MCTSPlayer:
         """
         Convert multiple numpy states to a batched PyTorch tensor.
         
+        GPU Optimization: Uses pinned memory and non-blocking transfers
+        for faster CPU->GPU data movement.
+        
         Args:
             states: List of game state arrays of shape (15, 8, 8).
         
         Returns:
             Tensor of shape (batch, 14, 8, 8) on correct device.
         """
-        batch = np.stack([state[:14] for state in states])
-        tensor = torch.from_numpy(batch.copy()).float()
-        return tensor.to(self.device)
+        # Stack states - always copy to avoid data corruption if original arrays are modified
+        batch = np.stack([state[:14].copy() for state in states])
+        
+        if self._use_pinned_memory:
+            # GPU optimization: Use pinned memory for faster async transfer
+            tensor = torch.from_numpy(batch).float().pin_memory()
+            return tensor.to(self.device, non_blocking=True)
+        else:
+            tensor = torch.from_numpy(batch).float()
+            return tensor.to(self.device)
     
     def _expand_node_with_probs(
         self,
@@ -477,6 +548,9 @@ class MCTSPlayer:
         """
         Expand a node by adding children and evaluating with neural network.
         
+        GPU Optimization: Removes redundant model.eval() calls and uses
+        optimized tensor transfers.
+        
         Args:
             node: Node to expand.
             legal_states: List of legal next states.
@@ -488,8 +562,7 @@ class MCTSPlayer:
         # Prepare state for neural network
         state_tensor = self._state_to_tensor(node.state)
         
-        # Get neural network prediction
-        self.model.eval()
+        # Get neural network prediction (model.eval() already called in __init__)
         with torch.no_grad():
             policy_logits, value = self.model(state_tensor)
             policy_probs = torch.softmax(policy_logits, dim=1)
@@ -657,6 +730,9 @@ class MCTSPlayer:
         """
         Convert numpy state to PyTorch tensor.
         
+        GPU Optimization: Uses pinned memory and non-blocking transfers
+        for faster CPU->GPU data movement.
+        
         Args:
             state: Game state array of shape (15, 8, 8).
         
@@ -664,9 +740,17 @@ class MCTSPlayer:
             Tensor of shape (1, 14, 8, 8) on correct device.
         """
         # Use only first 14 channels
-        tensor = torch.from_numpy(state[:14].copy()).float()
-        tensor = tensor.unsqueeze(0)  # Add batch dimension
-        return tensor.to(self.device)
+        state_slice = state[:14]
+        
+        if self._use_pinned_memory:
+            # GPU optimization: Use pinned memory for faster async transfer
+            tensor = torch.from_numpy(state_slice.copy()).float().pin_memory()
+            tensor = tensor.unsqueeze(0)  # Add batch dimension
+            return tensor.to(self.device, non_blocking=True)
+        else:
+            tensor = torch.from_numpy(state_slice.copy()).float()
+            tensor = tensor.unsqueeze(0)  # Add batch dimension
+            return tensor.to(self.device)
     
     def _outcome_to_value(self, outcome: str, player: int) -> float:
         """

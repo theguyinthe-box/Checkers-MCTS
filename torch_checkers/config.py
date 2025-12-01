@@ -107,12 +107,13 @@ class Config:
     final_temperature: float = 0.1  # Temperature after drop
     dirichlet_alpha: float = 1.0
     dirichlet_epsilon: float = 0.25
+    virtual_loss: float = 3.0  # Penalty for parallel MCTS to encourage diverse exploration
     
     # Self-Play Parameters
     num_self_play_games: int = 100
     max_game_moves: int = 200  # Terminate game if exceeds this
     num_parallel_games: int = 8  # Parallel self-play games for GPU efficiency
-    parallel_simulations: int = 1  # Number of parallel MCTS simulations (batched NN inference)
+    parallel_simulations: int = 8  # Number of parallel MCTS simulations (batched NN inference)
     
     # Progress Display
     show_progress: bool = True  # Show progress bars during training/self-play
