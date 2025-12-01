@@ -27,7 +27,7 @@ from .model import CheckersModel
 from .mcts import MCTSPlayer, MCTSNode
 from .dataset import CheckersDataset
 from .trainer import Trainer
-from .utils import setup_logging, save_checkpoint, load_checkpoint
+from .utils import setup_logging, save_checkpoint, load_checkpoint, parse_device_type
 
 __all__ = [
     'Config',
@@ -39,6 +39,7 @@ __all__ = [
     'setup_logging',
     'save_checkpoint',
     'load_checkpoint',
+    'parse_device_type',
 ]
 
 __version__ = '1.0.0'

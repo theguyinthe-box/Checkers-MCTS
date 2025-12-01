@@ -78,6 +78,20 @@ def setup_logging(
     return logger
 
 
+def parse_device_type(device: str) -> str:
+    """
+    Parse device string to extract device type.
+    
+    Handles device strings like 'cuda', 'cuda:0', 'cpu', etc.
+    
+    Args:
+        device: Device string (e.g., 'cuda:0', 'cpu').
+        
+    Returns:
+        Device type string (e.g., 'cuda', 'cpu').
+    """
+    return device.split(':')[0] if ':' in device else device
+
 def set_seed(seed: int):
     """
     Set random seed for reproducibility.
@@ -370,26 +384,29 @@ def plot_training_history(
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
     
     # Plot losses
-    epochs = range(1, len(history['train_loss']) + 1)
+    epochs = range(1, len(history.get('train_loss', [])) + 1)
     
-    axes[0].plot(epochs, history['train_loss'], label='Train Loss')
-    if history['val_loss']:
+    if 'train_loss' in history and history['train_loss']:
+        axes[0].plot(epochs, history['train_loss'], label='Train Loss')
+    if 'val_loss' in history and history['val_loss']:
         axes[0].plot(epochs, history['val_loss'], label='Val Loss')
     axes[0].set_xlabel('Epoch')
     axes[0].set_ylabel('Total Loss')
     axes[0].legend()
     axes[0].grid(True)
     
-    axes[1].plot(epochs, history['train_policy_loss'], label='Train')
-    if history['val_policy_loss']:
+    if 'train_policy_loss' in history and history['train_policy_loss']:
+        axes[1].plot(epochs, history['train_policy_loss'], label='Train')
+    if 'val_policy_loss' in history and history['val_policy_loss']:
         axes[1].plot(epochs, history['val_policy_loss'], label='Val')
     axes[1].set_xlabel('Epoch')
     axes[1].set_ylabel('Policy Loss')
     axes[1].legend()
     axes[1].grid(True)
     
-    axes[2].plot(epochs, history['train_value_loss'], label='Train')
-    if history['val_value_loss']:
+    if 'train_value_loss' in history and history['train_value_loss']:
+        axes[2].plot(epochs, history['train_value_loss'], label='Train')
+    if 'val_value_loss' in history and history['val_value_loss']:
         axes[2].plot(epochs, history['val_value_loss'], label='Val')
     axes[2].set_xlabel('Epoch')
     axes[2].set_ylabel('Value Loss')

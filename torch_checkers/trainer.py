@@ -39,7 +39,8 @@ from .utils import (
     load_checkpoint, 
     setup_logging,
     AverageMeter,
-    EarlyStopping
+    EarlyStopping,
+    parse_device_type
 )
 
 
@@ -95,10 +96,10 @@ class Trainer:
         self.scheduler = self._create_scheduler()
         
         # Setup mixed precision training
-        # Use 'cuda' as the device type for GradScaler when available
-        device_type = config.device.split(':')[0] if ':' in config.device else config.device
+        device_type = parse_device_type(config.device)
         self.scaler = GradScaler(device_type) if config.mixed_precision and device_type == 'cuda' else None
         self.use_amp = config.mixed_precision and device_type == 'cuda'
+        self.device_type = device_type  # Store for later use in autocast
         
         # Setup early stopping
         self.early_stopping = EarlyStopping(
@@ -286,7 +287,7 @@ class Trainer:
             target_values = batch['value'].to(self.device)
             
             # Forward pass with mixed precision
-            with autocast(device_type=self.device.split(':')[0] if ':' in self.device else self.device, enabled=self.use_amp):
+            with autocast(device_type=self.device_type, enabled=self.use_amp):
                 policy_logits, value_preds = self.model(states)
                 
                 # Policy loss (cross-entropy)
@@ -374,7 +375,7 @@ class Trainer:
                 target_policies = batch['policy'].to(self.device)
                 target_values = batch['value'].to(self.device)
                 
-                with autocast(device_type=self.device.split(':')[0] if ':' in self.device else self.device, enabled=self.use_amp):
+                with autocast(device_type=self.device_type, enabled=self.use_amp):
                     policy_logits, value_preds = self.model(states)
                     
                     policy_loss = F.cross_entropy(

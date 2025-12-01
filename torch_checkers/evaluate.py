@@ -27,7 +27,19 @@ from typing import List, Dict, Tuple, Optional
 import numpy as np
 import torch
 from collections import defaultdict
-from tabulate import tabulate
+
+try:
+    from tabulate import tabulate
+except ImportError:
+    # Fallback if tabulate is not installed
+    def tabulate(data, headers=None, tablefmt=None, showindex=None):
+        """Simple fallback for tabulate when not installed."""
+        lines = []
+        if headers:
+            lines.append('\t'.join(str(h) for h in headers))
+        for row in data:
+            lines.append('\t'.join(str(c) for c in row))
+        return '\n'.join(lines)
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
