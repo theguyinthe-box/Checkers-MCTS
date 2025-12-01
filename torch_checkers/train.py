@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from torch_checkers.config import Config, get_debug_config
 from torch_checkers.model import CheckersModel, create_model
-from torch_checkers.mcts import MCTSPlayer, run_self_play_game
+from torch_checkers.mcts import MCTSPlayer, run_self_play_game, run_self_play_game_with_progress
 from torch_checkers.dataset import ReplayBuffer, CheckersDataset, create_data_loaders
 from torch_checkers.trainer import Trainer
 from torch_checkers.utils import (
@@ -135,13 +135,36 @@ def parse_args():
         help='Use debug configuration (small model, few games)'
     )
     
+    # Parallelization options
+    parser.add_argument(
+        '--parallel-simulations', type=int, default=1,
+        help='Number of parallel MCTS simulations (batched NN inference). '
+             'Higher values utilize more GPU VRAM for faster training. '
+             'Recommended: 4-16 depending on available VRAM.'
+    )
+    
+    # Progress display options
+    parser.add_argument(
+        '--progress', action='store_true', default=True,
+        help='Show progress bars during self-play and training (default: enabled)'
+    )
+    parser.add_argument(
+        '--no-progress', action='store_true',
+        help='Disable progress bars for cleaner log output'
+    )
+    
     return parser.parse_args()
 
 
 def create_config(args) -> Config:
     """Create configuration from command line arguments."""
+    # Determine if progress should be shown
+    show_progress = args.progress and not args.no_progress
+    
     if args.debug:
         config = get_debug_config()
+        config.show_progress = show_progress
+        config.parallel_simulations = args.parallel_simulations
     else:
         config = Config(
             # Model
@@ -159,6 +182,12 @@ def create_config(args) -> Config:
             
             # Self-play
             num_self_play_games=args.games,
+            
+            # Parallelization
+            parallel_simulations=args.parallel_simulations,
+            
+            # Progress display
+            show_progress=show_progress,
             
             # System
             device=args.device,
@@ -188,28 +217,52 @@ def run_self_play(
     Returns:
         List of training examples from all games.
     """
+    from tqdm import tqdm
+    
     model.eval()
     all_data = []
     
-    logger.info(f"Starting self-play: {num_games} games with {config.num_simulations} simulations/move")
+    parallel_info = f" (parallel sims: {config.parallel_simulations})" if config.parallel_simulations > 1 else ""
+    logger.info(f"Starting self-play: {num_games} games with {config.num_simulations} simulations/move{parallel_info}")
     
     outcomes = {'player1_wins': 0, 'player2_wins': 0, 'draw': 0}
     total_moves = 0
     
-    for game_num in range(num_games):
+    # Create progress bar for games
+    show_progress = getattr(config, 'show_progress', True)
+    games_pbar = tqdm(
+        range(num_games), 
+        desc="Self-play games",
+        disable=not show_progress,
+        unit="game"
+    )
+    
+    for game_num in games_pbar:
         # Create fresh game environment
         game_env = Checkers()
         
-        # Play game
-        game_data, outcome, move_count = run_self_play_game(
-            game_env, model, config, config.device
+        # Play game with progress tracking
+        # Only show move-by-move progress for small game counts to avoid cluttered output
+        detailed_threshold = getattr(config, 'detailed_game_progress_threshold', 10)
+        game_data, outcome, move_count = run_self_play_game_with_progress(
+            game_env, model, config, config.device,
+            show_progress=show_progress and num_games <= detailed_threshold
         )
         
         all_data.extend(game_data)
         outcomes[outcome] = outcomes.get(outcome, 0) + 1
         total_moves += move_count
         
-        if (game_num + 1) % 10 == 0:
+        # Update progress bar with current statistics
+        games_pbar.set_postfix({
+            'moves': move_count,
+            'examples': len(all_data),
+            'P1': outcomes['player1_wins'],
+            'P2': outcomes['player2_wins'],
+            'Draw': outcomes['draw']
+        })
+        
+        if not show_progress and (game_num + 1) % 10 == 0:
             logger.info(
                 f"Self-play progress: {game_num + 1}/{num_games} games, "
                 f"{len(all_data)} training examples"
@@ -274,6 +327,8 @@ def evaluate_models(
     Returns:
         Tuple of (win_rate, outcomes_dict).
     """
+    from tqdm import tqdm
+    
     logger.info(f"Evaluating models: {num_games} games")
     
     new_model.eval()
@@ -281,7 +336,16 @@ def evaluate_models(
     
     outcomes = {'new_wins': 0, 'old_wins': 0, 'draws': 0}
     
-    for game_num in range(num_games):
+    # Create progress bar for evaluation games
+    show_progress = getattr(config, 'show_progress', True)
+    eval_pbar = tqdm(
+        range(num_games),
+        desc="Evaluation games",
+        disable=not show_progress,
+        unit="game"
+    )
+    
+    for game_num in eval_pbar:
         game_env = Checkers()
         
         # Alternate which model plays first
@@ -338,6 +402,13 @@ def evaluate_models(
                 outcomes['new_wins'] += 1
             else:
                 outcomes['old_wins'] += 1
+        
+        # Update progress bar
+        eval_pbar.set_postfix({
+            'New': outcomes['new_wins'],
+            'Old': outcomes['old_wins'],
+            'Draw': outcomes['draws']
+        })
     
     total_games = outcomes['new_wins'] + outcomes['old_wins'] + outcomes['draws']
     win_rate = (outcomes['new_wins'] + 0.5 * outcomes['draws']) / total_games
@@ -377,7 +448,9 @@ def main():
     logger.info(f"Model: {config.num_res_blocks} res blocks, {config.num_channels} channels")
     logger.info(f"Training: {config.batch_size} batch size, {config.learning_rate} LR")
     logger.info(f"MCTS: {config.num_simulations} simulations")
+    logger.info(f"Parallel simulations: {config.parallel_simulations}")
     logger.info(f"Self-play: {config.num_self_play_games} games per iteration")
+    logger.info(f"Progress display: {'enabled' if config.show_progress else 'disabled'}")
     
     if config.device == 'cuda':
         mem_info = get_gpu_memory_info()

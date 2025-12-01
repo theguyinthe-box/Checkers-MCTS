@@ -75,6 +75,7 @@ class Config:
     num_channels: int = 128
     input_channels: int = 14  # Channels 0-13 from Checkers state (excluding channel 14)
     board_size: int = 8
+    num_action_directions: int = 8  # 4 normal moves + 4 jumps
     policy_output_size: int = 512  # 8 directions * 8 * 8 positions = 512
     
     # Training Parameters
@@ -111,6 +112,11 @@ class Config:
     num_self_play_games: int = 100
     max_game_moves: int = 200  # Terminate game if exceeds this
     num_parallel_games: int = 8  # Parallel self-play games for GPU efficiency
+    parallel_simulations: int = 1  # Number of parallel MCTS simulations (batched NN inference)
+    
+    # Progress Display
+    show_progress: bool = True  # Show progress bars during training/self-play
+    detailed_game_progress_threshold: int = 10  # Show move-by-move progress if num_games <= this
     
     # Evaluation Parameters
     num_evaluation_games: int = 20
@@ -234,4 +240,21 @@ def get_debug_config() -> Config:
         num_evaluation_games=2,
         num_epochs=2,
         max_game_moves=50,
+        show_progress=True,
+    )
+
+
+def get_parallel_config() -> Config:
+    """
+    Configuration optimized for parallel MCTS simulations.
+    Uses batched neural network inference to better utilize GPU VRAM.
+    """
+    return Config(
+        num_res_blocks=10,
+        num_channels=128,
+        batch_size=256,
+        num_simulations=200,
+        num_parallel_games=8,
+        parallel_simulations=8,  # Batch 8 simulations together
+        show_progress=True,
     )
