@@ -321,6 +321,7 @@ class MCTSPlayer:
             # Collect leaf nodes for batched evaluation
             leaves_to_expand = []
             nodes_with_virtual_loss = []  # Track nodes for virtual loss removal
+            pending_expansion = set()  # Track nodes already selected for expansion in this batch
             
             # Run selection phase for multiple simulations
             for _ in range(min(batch_size, self.num_simulations - num_completed)):
@@ -346,6 +347,13 @@ class MCTSPlayer:
                     # Terminal nodes get their value immediately
                     self._backpropagate(search_path, node.terminal_value)
                     num_completed += 1
+                elif id(node) in pending_expansion:
+                    # This node is already being expanded in this batch - skip to avoid duplicates
+                    # Remove virtual loss since we're not processing this path
+                    for vl_node in path_for_virtual_loss:
+                        vl_node.visit_count -= 1
+                        vl_node.total_value += virtual_loss
+                    # Don't add to leaves_to_expand or increment num_completed
                 else:
                     # Collect leaf for batched expansion
                     node_history = history.copy()
@@ -366,6 +374,7 @@ class MCTSPlayer:
                         self._backpropagate(search_path, node.terminal_value)
                         num_completed += 1
                     else:
+                        pending_expansion.add(id(node))  # Mark as pending expansion
                         leaves_to_expand.append((node, child_states, search_path))
                         nodes_with_virtual_loss.append(path_for_virtual_loss)
             
