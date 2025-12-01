@@ -169,6 +169,9 @@ class MCTSPlayer:
         self.cpuct = config.cpuct
         self.dirichlet_alpha = config.dirichlet_alpha
         self.dirichlet_epsilon = config.dirichlet_epsilon
+        
+        # Parallel simulation parameters
+        self.parallel_simulations = getattr(config, 'parallel_simulations', 1)
     
     def get_action_probs(
         self,
@@ -209,7 +212,40 @@ class MCTSPlayer:
         # Expand root with neural network evaluation
         root_value = self._expand_node(root, legal_states, add_noise=add_noise)
         
-        # Run simulations
+        # Run simulations - use parallel batching if enabled
+        if self.parallel_simulations > 1:
+            self._run_parallel_simulations(root, history)
+        else:
+            self._run_sequential_simulations(root, history)
+        
+        # Extract policy from visit counts
+        policy_probs = self._get_policy_from_visits(root, temperature)
+        
+        # Select action
+        if temperature == 0:
+            # Deterministic: pick most visited
+            best_child = max(root.children.values(), key=lambda c: c.visit_count)
+        else:
+            # Sample from distribution
+            actions = list(root.children.keys())
+            visits = [root.children[a].visit_count for a in actions]
+            if temperature != 1.0:
+                visits = [v ** (1/temperature) for v in visits]
+            total = sum(visits)
+            probs = [v/total for v in visits]
+            idx = np.random.choice(len(actions), p=probs)
+            best_child = root.children[actions[idx]]
+        
+        return best_child.state, policy_probs, root.mean_value
+    
+    def _run_sequential_simulations(self, root: MCTSNode, history: List[np.ndarray]):
+        """
+        Run MCTS simulations sequentially (original behavior).
+        
+        Args:
+            root: Root node of the search tree.
+            history: Game history for legal move generation.
+        """
         for _ in range(self.num_simulations):
             node = root
             search_path = [node]
@@ -242,26 +278,188 @@ class MCTSPlayer:
             
             # Backpropagation
             self._backpropagate(search_path, value)
+    
+    def _run_parallel_simulations(self, root: MCTSNode, history: List[np.ndarray]):
+        """
+        Run MCTS simulations with batched neural network inference.
         
-        # Extract policy from visit counts
-        policy_probs = self._get_policy_from_visits(root, temperature)
+        This method collects multiple leaf nodes and evaluates them
+        together in a single batched forward pass through the neural
+        network, better utilizing GPU VRAM.
         
-        # Select action
-        if temperature == 0:
-            # Deterministic: pick most visited
-            best_child = max(root.children.values(), key=lambda c: c.visit_count)
+        Args:
+            root: Root node of the search tree.
+            history: Game history for legal move generation.
+        """
+        num_completed = 0
+        batch_size = self.parallel_simulations
+        
+        while num_completed < self.num_simulations:
+            # Collect leaf nodes for batched evaluation
+            leaves_to_expand = []
+            search_paths = []
+            
+            # Run selection phase for multiple simulations
+            for _ in range(min(batch_size, self.num_simulations - num_completed)):
+                node = root
+                search_path = [node]
+                
+                # Selection: traverse tree until leaf
+                while node.is_expanded() and not node.is_terminal:
+                    node = self._select_child(node)
+                    search_path.append(node)
+                
+                # Handle terminal or unexpanded nodes
+                if node.is_terminal:
+                    # Terminal nodes get their value immediately
+                    self._backpropagate(search_path, node.terminal_value)
+                    num_completed += 1
+                else:
+                    # Collect leaf for batched expansion
+                    node_history = history.copy()
+                    for n in search_path[1:]:
+                        node_history.append(n.state)
+                    
+                    child_states = self.game_env.get_legal_next_states(node_history)
+                    
+                    if not child_states:
+                        # Terminal state
+                        done, outcome = self.game_env.determine_outcome(node_history)
+                        node.is_terminal = True
+                        node.terminal_value = self._outcome_to_value(outcome, node.player)
+                        self._backpropagate(search_path, node.terminal_value)
+                        num_completed += 1
+                    else:
+                        leaves_to_expand.append((node, child_states, search_path))
+            
+            # Batch expand all collected leaves
+            if leaves_to_expand:
+                values = self._batch_expand_nodes(leaves_to_expand)
+                
+                # Backpropagate values for each leaf
+                for (node, child_states, search_path), value in zip(leaves_to_expand, values):
+                    self._backpropagate(search_path, value)
+                    num_completed += 1
+    
+    def _batch_expand_nodes(
+        self,
+        leaves: List[Tuple[MCTSNode, List[np.ndarray], List[MCTSNode]]]
+    ) -> List[float]:
+        """
+        Expand multiple nodes with batched neural network inference.
+        
+        This method processes multiple states in a single forward pass
+        through the neural network, which is more efficient on GPU.
+        
+        Args:
+            leaves: List of (node, legal_states, search_path) tuples.
+            
+        Returns:
+            List of value estimates for each node.
+        """
+        if not leaves:
+            return []
+        
+        # Prepare batch of states
+        states = [node.state for node, _, _ in leaves]
+        state_batch = self._states_to_tensor(states)
+        
+        # Batch neural network inference
+        self.model.eval()
+        with torch.no_grad():
+            policy_logits, values = self.model(state_batch)
+            policy_probs = torch.softmax(policy_logits, dim=1)
+        
+        policy_probs_np = policy_probs.cpu().numpy().reshape(-1, 8, 8, 8)
+        values_np = values.cpu().numpy().flatten()
+        
+        # Expand each node with its corresponding predictions
+        for i, (node, legal_states, _) in enumerate(leaves):
+            self._expand_node_with_probs(
+                node, 
+                legal_states, 
+                policy_probs_np[i],
+                add_noise=False
+            )
+        
+        return values_np.tolist()
+    
+    def _states_to_tensor(self, states: List[np.ndarray]) -> torch.Tensor:
+        """
+        Convert multiple numpy states to a batched PyTorch tensor.
+        
+        Args:
+            states: List of game state arrays of shape (15, 8, 8).
+        
+        Returns:
+            Tensor of shape (batch, 14, 8, 8) on correct device.
+        """
+        batch = np.stack([state[:14] for state in states])
+        tensor = torch.from_numpy(batch.copy()).float()
+        return tensor.to(self.device)
+    
+    def _expand_node_with_probs(
+        self,
+        node: MCTSNode,
+        legal_states: List[np.ndarray],
+        policy_probs: np.ndarray,
+        add_noise: bool = False
+    ):
+        """
+        Expand a node using pre-computed policy probabilities.
+        
+        Args:
+            node: Node to expand.
+            legal_states: List of legal next states.
+            policy_probs: Policy probability array of shape (8, 8, 8).
+            add_noise: Whether to add Dirichlet noise to priors.
+        """
+        # Create action mask from legal states
+        action_mask = np.zeros((8, 8, 8))
+        action_to_state = {}
+        
+        for next_state in legal_states:
+            layer = int(next_state[14, 0, 0]) - 6
+            x = int(next_state[14, 0, 1])
+            y = int(next_state[14, 0, 2])
+            action_idx = (layer, x, y)
+            
+            action_mask[layer, x, y] = 1
+            action_to_state[action_idx] = next_state
+        
+        # Mask and normalize policy
+        masked_policy = policy_probs * action_mask
+        policy_sum = masked_policy.sum()
+        if policy_sum > 0:
+            masked_policy /= policy_sum
         else:
-            # Sample from distribution
-            actions = list(root.children.keys())
-            visits = [root.children[a].visit_count for a in actions]
-            if temperature != 1.0:
-                visits = [v ** (1/temperature) for v in visits]
-            total = sum(visits)
-            probs = [v/total for v in visits]
-            idx = np.random.choice(len(actions), p=probs)
-            best_child = root.children[actions[idx]]
+            masked_policy = action_mask / action_mask.sum()
         
-        return best_child.state, policy_probs, root.mean_value
+        # Add Dirichlet noise for exploration
+        if add_noise and len(action_to_state) > 0:
+            noise = np.random.dirichlet(
+                [self.dirichlet_alpha] * len(action_to_state)
+            )
+            idx = 0
+            for action_idx in action_to_state.keys():
+                layer, x, y = action_idx
+                masked_policy[layer, x, y] = (
+                    (1 - self.dirichlet_epsilon) * masked_policy[layer, x, y] +
+                    self.dirichlet_epsilon * noise[idx]
+                )
+                idx += 1
+        
+        # Create child nodes
+        for action_idx, next_state in action_to_state.items():
+            layer, x, y = action_idx
+            prior = masked_policy[layer, x, y]
+            child = MCTSNode(
+                state=next_state,
+                parent=node,
+                action_idx=action_idx,
+                prior_prob=prior
+            )
+            node.children[action_idx] = child
     
     def _expand_node(
         self,
@@ -537,6 +735,128 @@ def run_self_play_game(
         # Make move
         game_env.step(next_state)
         move_count += 1
+    
+    # Handle terminated games (no winner yet)
+    if not game_env.done:
+        # Game was terminated, determine winner by piece count
+        state = game_env.state
+        p1_count = np.sum(state[0:2])
+        p2_count = np.sum(state[2:4])
+        
+        if p1_count > p2_count:
+            outcome = 'player1_wins'
+        elif p2_count > p1_count:
+            outcome = 'player2_wins'
+        else:
+            outcome = 'draw'
+    else:
+        outcome = game_env.outcome
+    
+    # Convert outcome to values and create training data
+    training_data = []
+    for exp in experiences:
+        # Value from player's perspective
+        if outcome == 'draw':
+            z_value = 0.0
+        elif outcome == 'player1_wins':
+            z_value = 1.0 if exp['player'] == 0 else -1.0
+        else:  # player2_wins
+            z_value = 1.0 if exp['player'] == 1 else -1.0
+        
+        training_data.append((
+            exp['state'][:14],  # State without action channel
+            exp['policy'],      # MCTS policy
+            exp['q_value'],     # Q-value from MCTS
+            z_value            # Actual game outcome
+        ))
+    
+    return training_data, outcome, move_count
+
+
+def run_self_play_game_with_progress(
+    game_env,
+    model: torch.nn.Module,
+    config,
+    device: str = 'cuda',
+    show_progress: bool = True
+) -> Tuple[List[Tuple[np.ndarray, np.ndarray, float, float]], str, int]:
+    """
+    Play a complete game of self-play with progress tracking.
+    
+    This function plays a full game using MCTS with the given neural
+    network, collecting states, policies, and values for training.
+    Optionally displays a progress bar showing game progress.
+    
+    Args:
+        game_env: Checkers game environment.
+        model: Neural network model.
+        config: Configuration object.
+        device: Device for inference.
+        show_progress: Whether to display move-by-move progress bar.
+    
+    Returns:
+        Tuple of (training_data, outcome, move_count).
+    """
+    from tqdm import tqdm
+    
+    mcts = MCTSPlayer(game_env, model, config, device)
+    game_env.reset()
+    
+    experiences = []
+    move_count = 0
+    
+    # Create progress bar for moves within this game
+    max_moves = config.max_game_moves
+    moves_pbar = tqdm(
+        total=max_moves,
+        desc="  Game moves",
+        disable=not show_progress,
+        unit="move",
+        leave=False
+    )
+    
+    while not game_env.done and move_count < max_moves:
+        # Determine temperature based on move count
+        if move_count < config.temperature_drop_move:
+            temperature = config.temperature
+        else:
+            temperature = config.final_temperature
+        
+        # Get action from MCTS
+        next_state, policy, value = mcts.get_action_probs(
+            game_env.state,
+            game_env.history,
+            temperature=temperature,
+            add_noise=True  # Add noise during training
+        )
+        
+        # Store experience
+        experiences.append({
+            'state': game_env.state.copy(),
+            'policy': policy.copy(),
+            'q_value': value,
+            'player': int(game_env.state[4, 0, 0])
+        })
+        
+        # Make move
+        game_env.step(next_state)
+        move_count += 1
+        
+        # Update progress bar
+        moves_pbar.update(1)
+        
+        # Count pieces for progress display
+        state = game_env.state
+        p1_pieces = int(np.sum(state[0:2]))
+        p2_pieces = int(np.sum(state[2:4]))
+        current_player = "P1" if int(state[4, 0, 0]) == 0 else "P2"
+        moves_pbar.set_postfix({
+            'turn': current_player,
+            'P1': p1_pieces,
+            'P2': p2_pieces
+        })
+    
+    moves_pbar.close()
     
     # Handle terminated games (no winner yet)
     if not game_env.done:

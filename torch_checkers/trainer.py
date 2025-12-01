@@ -206,12 +206,26 @@ class Trainer:
         self.logger.info(f"Training samples: {len(train_data)}, Batch size: {self.config.batch_size}")
         self.logger.info(f"Device: {self.device}, Mixed precision: {self.use_amp}")
         
-        for epoch in range(self.current_epoch, num_epochs):
+        # Import tqdm for progress bar
+        from tqdm import tqdm
+        
+        # Determine if progress should be shown
+        show_progress = getattr(self.config, 'show_progress', True)
+        
+        # Create progress bar for epochs
+        epoch_pbar = tqdm(
+            range(self.current_epoch, num_epochs),
+            desc="Training epochs",
+            disable=not show_progress,
+            unit="epoch"
+        )
+        
+        for epoch in epoch_pbar:
             self.current_epoch = epoch
             epoch_start = time.time()
             
             # Training phase
-            train_metrics = self._train_epoch(train_loader)
+            train_metrics = self._train_epoch(train_loader, show_progress=show_progress)
             
             # Validation phase
             if val_loader is not None:
@@ -236,15 +250,23 @@ class Trainer:
             
             epoch_time = time.time() - epoch_start
             
-            # Log progress
-            self.logger.info(
-                f"Epoch {epoch+1}/{num_epochs} - "
-                f"Train Loss: {train_metrics['loss']:.4f} "
-                f"(P: {train_metrics['policy_loss']:.4f}, V: {train_metrics['value_loss']:.4f}) - "
-                f"Val Loss: {val_metrics['loss']:.4f} - "
-                f"LR: {current_lr:.2e} - "
-                f"Time: {epoch_time:.1f}s"
-            )
+            # Update progress bar
+            epoch_pbar.set_postfix({
+                'train': f"{train_metrics['loss']:.4f}",
+                'val': f"{val_metrics['loss']:.4f}",
+                'LR': f"{current_lr:.2e}"
+            })
+            
+            # Log progress (only when progress bars are disabled)
+            if not show_progress:
+                self.logger.info(
+                    f"Epoch {epoch+1}/{num_epochs} - "
+                    f"Train Loss: {train_metrics['loss']:.4f} "
+                    f"(P: {train_metrics['policy_loss']:.4f}, V: {train_metrics['value_loss']:.4f}) - "
+                    f"Val Loss: {val_metrics['loss']:.4f} - "
+                    f"LR: {current_lr:.2e} - "
+                    f"Time: {epoch_time:.1f}s"
+                )
             
             # Save checkpoint if best
             if val_metrics['loss'] < self.best_val_loss:
@@ -262,16 +284,19 @@ class Trainer:
         
         return history
     
-    def _train_epoch(self, data_loader: DataLoader) -> Dict[str, float]:
+    def _train_epoch(self, data_loader: DataLoader, show_progress: bool = True) -> Dict[str, float]:
         """
         Run one training epoch.
         
         Args:
             data_loader: Training data loader.
+            show_progress: Whether to show batch progress bar.
             
         Returns:
             Dictionary with average loss values.
         """
+        from tqdm import tqdm
+        
         self.model.train()
         
         loss_meter = AverageMeter()
@@ -280,7 +305,17 @@ class Trainer:
         
         self.optimizer.zero_grad()
         
-        for batch_idx, batch in enumerate(data_loader):
+        # Create progress bar for batches
+        batch_pbar = tqdm(
+            enumerate(data_loader),
+            total=len(data_loader),
+            desc="  Batches",
+            disable=not show_progress,
+            leave=False,
+            unit="batch"
+        )
+        
+        for batch_idx, batch in batch_pbar:
             # Move data to device
             states = batch['state'].to(self.device)
             target_policies = batch['policy'].to(self.device)
@@ -340,8 +375,15 @@ class Trainer:
             policy_loss_meter.update(policy_loss.item(), batch_size)
             value_loss_meter.update(value_loss.item(), batch_size)
             
-            # Log interval
-            if batch_idx % self.config.log_interval == 0:
+            # Update batch progress bar
+            batch_pbar.set_postfix({
+                'loss': f"{loss_meter.avg:.4f}",
+                'p_loss': f"{policy_loss_meter.avg:.4f}",
+                'v_loss': f"{value_loss_meter.avg:.4f}"
+            })
+            
+            # Log interval (for when progress is disabled)
+            if not show_progress and batch_idx % self.config.log_interval == 0:
                 self.logger.debug(
                     f"Batch {batch_idx}/{len(data_loader)} - "
                     f"Loss: {loss_meter.avg:.4f}"
