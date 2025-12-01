@@ -136,7 +136,7 @@ class Checkers:
                 continue # Jumps are mandatory, skip normal moves
             if y+1 < 8 and -1 < x+fwd < 8:
                 if board[x+fwd,y+1] == 0: # Diagonal-right space open
-                    temp_state = deepcopy(state)
+                    temp_state = np.copy(state)
                     temp_state[5:] = 0 # Erase NN layers from previous state
                     temp_state[4] = 1 - player # Toggle player
                     temp_state[idx,x,y] = 0 # Piece no longer in prev location
@@ -156,7 +156,7 @@ class Checkers:
                     legal_moves.append(temp_state)
             if y-1 > -1 and -1 < x+fwd < 8:
                 if board[x+fwd,y-1] == 0: # Diagonal-left space open
-                    temp_state = deepcopy(state)
+                    temp_state = np.copy(state)
                     temp_state[5:] = 0 # Erase NN layers from previous state
                     temp_state[4] = 1 - player # Toggle player
                     temp_state[idx,x,y] = 0 # Piece no longer in prev location
@@ -184,7 +184,7 @@ class Checkers:
                 for ymove in range(-1,2,2):
                     if -1 < x+xmove < 8 and -1 < y+ymove < 8:
                         if board[x+xmove,y+ymove] == 0: # Diag space open
-                            temp_state = deepcopy(state)
+                            temp_state = np.copy(state)
                             temp_state[5:] = 0 # Erase NN layers from previous state
                             temp_state[4] = 1 - player # Toggle player
                             temp_state[idx+1,x,y] = 0 # Piece no longer in prev location
@@ -236,7 +236,7 @@ class Checkers:
                 state[opp_idx+1,x+fwd,y+ydir] == 1: # Opponent's piece on diag space
                     if -1 < y+2*ydir < 8 and -1 < x+2*fwd < 8:
                         if board[x+fwd*2,y+ydir*2] == 0: # Piece is jumpable
-                            temp_state = deepcopy(state)
+                            temp_state = np.copy(state)
                             temp_state[5:] = 0 # Erase NN layers from previous state
                             temp_state[idx,x,y] = 0 # Piece no longer in prev location
                             temp_state[opp_idx,x+fwd,y+ydir] = 0 # Opponent's piece jumped (if man)
@@ -294,7 +294,7 @@ class Checkers:
                     state[opp_idx+1,x+fwd,y+ydir] == 1: # Opponent's piece on diag space
                         if -1 < x+2*fwd < 8 and -1 < y+2*ydir < 8:
                             if board[x+fwd*2,y+ydir*2] == 0: # Piece is jumpable
-                                temp_state = deepcopy(state)
+                                temp_state = np.copy(state)
                                 temp_state[5:] = 0 # Erase NN layers from previous state
                                 temp_state[idx+1,x,y] = 0 # Piece no longer in prev location
                                 temp_state[opp_idx,x+fwd,y+ydir] = 0 # Opponent's piece jumped (if man)
