@@ -242,9 +242,11 @@ def run_self_play(
         game_env = Checkers()
         
         # Play game with progress tracking
+        # Only show move-by-move progress for small game counts to avoid cluttered output
+        detailed_threshold = getattr(config, 'detailed_game_progress_threshold', 10)
         game_data, outcome, move_count = run_self_play_game_with_progress(
             game_env, model, config, config.device,
-            show_progress=show_progress and num_games <= 10  # Only show move progress for small game counts
+            show_progress=show_progress and num_games <= detailed_threshold
         )
         
         all_data.extend(game_data)

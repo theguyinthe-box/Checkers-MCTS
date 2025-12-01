@@ -370,7 +370,12 @@ class MCTSPlayer:
             policy_logits, values = self.model(state_batch)
             policy_probs = torch.softmax(policy_logits, dim=1)
         
-        policy_probs_np = policy_probs.cpu().numpy().reshape(-1, 8, 8, 8)
+        policy_probs_np = policy_probs.cpu().numpy().reshape(
+            -1, 
+            self.config.num_action_directions, 
+            self.config.board_size, 
+            self.config.board_size
+        )
         values_np = values.cpu().numpy().flatten()
         
         # Expand each node with its corresponding predictions
@@ -415,7 +420,9 @@ class MCTSPlayer:
             add_noise: Whether to add Dirichlet noise to priors.
         """
         # Create action mask from legal states
-        action_mask = np.zeros((8, 8, 8))
+        board_size = self.config.board_size
+        num_directions = self.config.num_action_directions
+        action_mask = np.zeros((num_directions, board_size, board_size))
         action_to_state = {}
         
         for next_state in legal_states:

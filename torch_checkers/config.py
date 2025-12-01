@@ -75,6 +75,7 @@ class Config:
     num_channels: int = 128
     input_channels: int = 14  # Channels 0-13 from Checkers state (excluding channel 14)
     board_size: int = 8
+    num_action_directions: int = 8  # 4 normal moves + 4 jumps
     policy_output_size: int = 512  # 8 directions * 8 * 8 positions = 512
     
     # Training Parameters
@@ -115,6 +116,7 @@ class Config:
     
     # Progress Display
     show_progress: bool = True  # Show progress bars during training/self-play
+    detailed_game_progress_threshold: int = 10  # Show move-by-move progress if num_games <= this
     
     # Evaluation Parameters
     num_evaluation_games: int = 20
