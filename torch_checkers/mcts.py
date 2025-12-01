@@ -174,6 +174,10 @@ class MCTSPlayer:
         # Parallel simulation parameters
         self.parallel_simulations = getattr(config, 'parallel_simulations', 1)
         
+        # Virtual loss for parallel MCTS - encourages exploration of different paths
+        # during batched selection. Higher values = more exploration diversity.
+        self.virtual_loss = getattr(config, 'virtual_loss', 3.0)
+        
         # GPU optimization: Set model to eval mode once and keep it there
         self.model.eval()
         
@@ -301,13 +305,17 @@ class MCTSPlayer:
         encourage exploration of different branches when collecting
         multiple leaves for batched evaluation.
         
+        Note: This implementation is single-threaded, so there are no race
+        conditions. Virtual loss is applied and removed within the same
+        batch iteration.
+        
         Args:
             root: Root node of the search tree.
             history: Game history for legal move generation.
         """
         num_completed = 0
         batch_size = self.parallel_simulations
-        virtual_loss = 3.0  # Penalty applied to visited nodes during batch selection
+        virtual_loss = self.virtual_loss  # Use configurable value from __init__
         
         while num_completed < self.num_simulations:
             # Collect leaf nodes for batched evaluation
@@ -446,15 +454,15 @@ class MCTSPlayer:
         Returns:
             Tensor of shape (batch, 14, 8, 8) on correct device.
         """
-        # Stack states efficiently - avoid extra copy when possible
-        batch = np.stack([state[:14] for state in states])
+        # Stack states - always copy to avoid data corruption if original arrays are modified
+        batch = np.stack([state[:14].copy() for state in states])
         
         if self._use_pinned_memory:
             # GPU optimization: Use pinned memory for faster async transfer
             tensor = torch.from_numpy(batch).float().pin_memory()
             return tensor.to(self.device, non_blocking=True)
         else:
-            tensor = torch.from_numpy(batch.copy()).float()
+            tensor = torch.from_numpy(batch).float()
             return tensor.to(self.device)
     
     def _expand_node_with_probs(

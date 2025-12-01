@@ -107,6 +107,7 @@ class Config:
     final_temperature: float = 0.1  # Temperature after drop
     dirichlet_alpha: float = 1.0
     dirichlet_epsilon: float = 0.25
+    virtual_loss: float = 3.0  # Penalty for parallel MCTS to encourage diverse exploration
     
     # Self-Play Parameters
     num_self_play_games: int = 100
