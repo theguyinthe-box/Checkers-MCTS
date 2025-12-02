@@ -242,6 +242,19 @@ class Checkers:
         # Default: return start position (should not happen in normal gameplay)
         return (start_x, start_y)
     
+    def _get_jump_layer(self, fwd, ydir):
+        """Get the NN layer index for a jump move based on direction.
+        Returns layer 10-13 for jumps (UL, UR, BL, BR).
+        """
+        if fwd == 1 and ydir == 1:
+            return 13  # BR jump
+        elif fwd == 1 and ydir == -1:
+            return 12  # BL jump
+        elif fwd == -1 and ydir == 1:
+            return 11  # UR jump
+        else:  # fwd == -1 and ydir == -1
+            return 10  # UL jump
+    
     def _check_jumps(self,x,y,fwd,state,idx,opp_idx,board,player,is_double_jumping=False):
         """Method intended for internal use.  Checks to see if a jump is 
         possible for a man given its position and the game state.  Function 
@@ -274,14 +287,7 @@ class Checkers:
                             temp_state[opp_idx,x+fwd,y+ydir] = 0 # Opponent's piece jumped (if man)
                             temp_state[opp_idx+1,x+fwd,y+ydir] = 0 # Opponent's piece jumped (if king)
                             # Determine the move layer for this jump
-                            if fwd == 1 and ydir == 1: 
-                                move_layer = 13  # BR jump
-                            elif fwd == 1 and ydir == -1:
-                                move_layer = 12  # BL jump
-                            elif fwd == -1 and ydir == 1:
-                                move_layer = 11  # UR jump
-                            else:  # fwd == -1 and ydir == -1
-                                move_layer = 10  # UL jump
+                            move_layer = self._get_jump_layer(fwd, ydir)
                             # Set temp_state[14] BEFORE recursive call so double jump detection works
                             temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
                                 move_layer, x, y
@@ -332,14 +338,7 @@ class Checkers:
                                 temp_state[opp_idx+1,x+fwd,y+ydir] = 0 # Opponent's piece jumped (if king)
                                 temp_state[idx+1,x+2*fwd,y+2*ydir] = 1  # Move piece to new location
                                 # Determine the move layer for this jump
-                                if fwd == 1 and ydir == 1: 
-                                    move_layer = 13  # BR jump
-                                elif fwd == 1 and ydir == -1:
-                                    move_layer = 12  # BL jump
-                                elif fwd == -1 and ydir == 1:
-                                    move_layer = 11  # UR jump
-                                else:  # fwd == -1 and ydir == -1
-                                    move_layer = 10  # UL jump
+                                move_layer = self._get_jump_layer(fwd, ydir)
                                 # Set temp_state[14] BEFORE recursive call so double jump detection works
                                 temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
                                     move_layer, x, y
