@@ -415,6 +415,9 @@ def main():
     # Initialize replay buffer
     replay_buffer = ReplayBuffer(max_size=config.replay_buffer_size)
     
+    # Initialize trainer once (preserves optimizer state across iterations)
+    trainer = Trainer(model, config)
+    
     # Evaluation history
     eval_history = []
     training_history = {
@@ -478,7 +481,6 @@ def main():
         logger.info("-" * 40)
         
         training_data = replay_buffer.get_all()
-        trainer = Trainer(model, config)
         history = trainer.train(training_data, num_epochs=config.num_epochs, val_split=0.2)
         
         # Record training history

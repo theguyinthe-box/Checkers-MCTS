@@ -202,7 +202,11 @@ class Trainer:
             'learning_rate': []
         }
         
-        self.logger.info(f"Starting training for {num_epochs} epochs")
+        # Calculate epoch range for this training session
+        start_epoch = self.current_epoch
+        end_epoch = start_epoch + num_epochs
+        
+        self.logger.info(f"Starting training for {num_epochs} epochs (global epochs {start_epoch + 1} to {end_epoch})")
         self.logger.info(f"Training samples: {len(train_data)}, Batch size: {self.config.batch_size}")
         self.logger.info(f"Device: {self.device}, Mixed precision: {self.use_amp}")
         
@@ -214,7 +218,7 @@ class Trainer:
         
         # Create progress bar for epochs
         epoch_pbar = tqdm(
-            range(self.current_epoch, num_epochs),
+            range(start_epoch, end_epoch),
             desc="Training epochs",
             disable=not show_progress,
             unit="epoch"
@@ -280,7 +284,11 @@ class Trainer:
             # Early stopping check
             if val_loader is not None and self.early_stopping(val_metrics['loss']):
                 self.logger.info(f"Early stopping triggered at epoch {epoch+1}")
+                self.current_epoch = epoch + 1  # Update here for early stopping case
                 break
+        else:
+            # Loop completed without early stopping - update to next epoch
+            self.current_epoch = end_epoch
         
         return history
     
