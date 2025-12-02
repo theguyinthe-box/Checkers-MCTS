@@ -284,10 +284,11 @@ class Trainer:
             # Early stopping check
             if val_loader is not None and self.early_stopping(val_metrics['loss']):
                 self.logger.info(f"Early stopping triggered at epoch {epoch+1}")
+                self.current_epoch = epoch + 1  # Update here for early stopping case
                 break
-        
-        # Update current_epoch to next epoch for continuation
-        self.current_epoch = epoch + 1
+        else:
+            # Loop completed without early stopping - update to next epoch
+            self.current_epoch = end_epoch
         
         return history
     
