@@ -477,6 +477,9 @@ def main():
     # Keep track of best model
     best_model_state = model.state_dict()
     
+    # Initialize trainer once (preserves optimizer state across iterations)
+    trainer = Trainer(model, config)
+    
     # Main training loop
     for iteration in range(start_iteration, args.iterations):
         logger.info("=" * 60)
@@ -510,7 +513,12 @@ def main():
         logger.info("-" * 40)
         
         training_data = replay_buffer.get_all()
-        history = train_model(model, training_data, config, logger)
+        logger.info(f"Starting training on {len(training_data)} examples")
+        history = trainer.train(
+            training_data,
+            num_epochs=config.num_epochs,
+            val_split=config.validation_split
+        )
         
         # Save training history
         history_path = os.path.join(

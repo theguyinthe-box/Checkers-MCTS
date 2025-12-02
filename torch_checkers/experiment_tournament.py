@@ -237,6 +237,9 @@ def train_single_player(
     # Initialize replay buffer
     replay_buffer = ReplayBuffer(max_size=config.replay_buffer_size)
     
+    # Initialize trainer once (preserves optimizer state across iterations)
+    trainer = Trainer(model, config)
+    
     # Training loop
     iterations_pbar = tqdm(
         range(args.iterations),
@@ -256,7 +259,6 @@ def train_single_player(
         
         # Training phase
         training_data = replay_buffer.get_all()
-        trainer = Trainer(model, config)
         trainer.train(training_data, num_epochs=config.num_epochs, val_split=0.2)
         
         iterations_pbar.set_postfix({
