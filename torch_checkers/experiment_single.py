@@ -33,6 +33,7 @@ from typing import List, Dict, Tuple, Optional
 import numpy as np
 import torch
 import json
+from tqdm import tqdm
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -43,6 +44,7 @@ from torch_checkers.mcts import MCTSPlayer
 from torch_checkers.dataset import ReplayBuffer
 from torch_checkers.trainer import Trainer
 from torch_checkers.random_player import RandomPlayer
+from torch_checkers.train import run_self_play
 from torch_checkers.utils import (
     setup_logging,
     set_seed,
@@ -440,9 +442,6 @@ def main():
     })
     
     # Training loop
-    from tqdm import tqdm
-    from torch_checkers.train import run_self_play
-    
     iterations_pbar = tqdm(
         range(start_iteration, args.iterations),
         desc="Training iterations",

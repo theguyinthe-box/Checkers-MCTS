@@ -40,9 +40,10 @@ class RandomPlayer:
     
     Example:
         >>> from Checkers import Checkers
+        >>> from torch_checkers.random_player import RandomPlayer
         >>> game = Checkers()
         >>> player = RandomPlayer(game)
-        >>> next_state, policy = player.get_action(game.state, game.history)
+        >>> next_state, policy, _ = player.get_action(game.state, game.history)
     """
     
     def __init__(self, game_env, seed: Optional[int] = None):

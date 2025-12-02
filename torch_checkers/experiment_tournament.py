@@ -35,6 +35,7 @@ from typing import List, Dict, Tuple, Optional
 import numpy as np
 import torch
 from collections import defaultdict
+from tqdm import tqdm
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,6 +45,7 @@ from torch_checkers.model import CheckersModel, create_model
 from torch_checkers.mcts import MCTSPlayer
 from torch_checkers.dataset import ReplayBuffer
 from torch_checkers.trainer import Trainer
+from torch_checkers.train import run_self_play
 from torch_checkers.utils import (
     setup_logging,
     set_seed,
@@ -214,8 +216,6 @@ def train_single_player(
     
     Returns the path to the final model checkpoint.
     """
-    from tqdm import tqdm
-    
     logger.info(f"=" * 60)
     logger.info(f"Training Player {player_id}")
     logger.info(f"=" * 60)
@@ -248,7 +248,6 @@ def train_single_player(
         logger.info(f"Player {player_id} - Iteration {iteration + 1}/{args.iterations}")
         
         # Self-play phase
-        from torch_checkers.train import run_self_play
         self_play_data = run_self_play(
             model, config, config.num_self_play_games, logger
         )
