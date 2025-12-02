@@ -15,9 +15,14 @@
 # - trainer: Training loop with mixed precision and gradient accumulation
 # - config: Configuration dataclass for hyperparameters
 # - utils: Utility functions for logging, checkpointing, etc.
+# - random_player: Random Legal Move player for benchmarking
+# - experiment_tournament: Multi-player tournament training experiment
+# - experiment_single: Single player training with evaluation
+# - evaluate_vs_random: Evaluation pipeline for testing against random player
 #
 # Usage:
 #   from torch_checkers import CheckersModel, MCTSPlayer, Trainer, Config
+#   from torch_checkers import RandomPlayer
 #
 ###############################################################################
 """
@@ -28,6 +33,7 @@ from .mcts import MCTSPlayer, MCTSNode
 from .dataset import CheckersDataset
 from .trainer import Trainer
 from .utils import setup_logging, save_checkpoint, load_checkpoint, parse_device_type
+from .random_player import RandomPlayer
 
 __all__ = [
     'Config',
@@ -36,6 +42,7 @@ __all__ = [
     'MCTSNode',
     'CheckersDataset',
     'Trainer',
+    'RandomPlayer',
     'setup_logging',
     'save_checkpoint',
     'load_checkpoint',

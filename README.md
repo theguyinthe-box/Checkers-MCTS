@@ -488,5 +488,374 @@ The wood texture of the Checkers board used in my Pygame GUI is from "5 wood tex
  8. L. N. Smith, “Cyclical Learning Rates for Training Neural Networks,” arXiv:1506.01186 [cs], Apr. 2017, Accessed: Jan. 12, 2021. [Online]. Available: http://arxiv.org/abs/1506.01186.
 
 
+---
+
+## PyTorch Training Pipeline
+
+This repository includes a modernized PyTorch-based training pipeline (`torch_checkers/`) that provides flexible experiment configurations for training and evaluating Checkers-playing neural networks.
+
+### Quick Start
+
+```bash
+# Install dependencies
+pip install torch numpy tqdm tabulate matplotlib
+
+# Run a quick debug test
+python -m torch_checkers.train --debug --iterations 2
+
+# Evaluate a trained model against random player
+python -m torch_checkers.evaluate_vs_random --model path/to/model.pt --games 50
+```
+
+### Training Experiments
+
+The training pipeline supports two main experiment types:
+
+---
+
+### Experiment 1: Multi-Player Tournament Training
+
+Train multiple independent Checkers players and run a tournament to select the best model.
+
+**What it does:**
+1. Trains N different players for M iterations each
+2. Each player learns independently with a different random seed
+3. Saves checkpoints for each player separately
+4. Runs a round-robin tournament between all trained models
+5. Uses "first to K wins" format for each match
+6. Reports tournament standings and declares winner
+
+**Command:**
+
+```bash
+python -m torch_checkers.experiment_tournament \
+    --num-players 3 \
+    --iterations 5 \
+    --games-per-iteration 50 \
+    --tournament-games 10 \
+    --first-to 3
+```
+
+**Full Command-Line Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--num-players` | 3 | Number of different players to train |
+| `--iterations` | 5 | Number of training iterations per player |
+| `--games-per-iteration` | 50 | Self-play games per iteration |
+| `--simulations` | 100 | MCTS simulations per move during training |
+| `--epochs` | 10 | Training epochs per iteration |
+| `--max-moves` | 200 | Maximum moves per game |
+| `--res-blocks` | 6 | Number of residual blocks in model |
+| `--channels` | 64 | Number of channels in convolutions |
+| `--batch-size` | 128 | Training batch size |
+| `--lr` | 1e-3 | Learning rate |
+| `--tournament-games` | 10 | Games per match in tournament |
+| `--tournament-simulations` | 200 | MCTS simulations during tournament |
+| `--first-to` | 3 | First to N wins takes the match |
+| `--device` | cuda | Device (cuda or cpu) |
+| `--seed` | 42 | Base random seed |
+| `--output-dir` | data/tournament_experiment | Output directory |
+| `--debug` | - | Use debug configuration |
+| `--no-progress` | - | Disable progress bars |
+
+**Example with full configuration:**
+
+```bash
+# Train 5 players for 10 iterations, with stronger models
+python -m torch_checkers.experiment_tournament \
+    --num-players 5 \
+    --iterations 10 \
+    --games-per-iteration 100 \
+    --simulations 200 \
+    --epochs 20 \
+    --res-blocks 10 \
+    --channels 128 \
+    --tournament-games 20 \
+    --first-to 5 \
+    --output-dir data/full_tournament
+```
+
+**Output Structure:**
+
+```
+data/tournament_experiment/
+├── logs/                           # Training logs
+├── player_0/
+│   ├── checkpoints/                # Player 0's model checkpoints
+│   ├── data/                       # Player 0's training data
+│   └── logs/                       # Player 0's training logs
+├── player_1/
+│   └── ...
+├── player_2/
+│   └── ...
+└── tournament_results_*.json       # Tournament results
+```
+
+---
+
+### Experiment 2: Single Player Training with Evaluation
+
+Train one player with comprehensive evaluation against a random baseline.
+
+**What it does:**
+1. Trains a single player for N iterations
+2. Evaluates against a random player at regular intervals
+3. Tracks and plots performance over time
+4. Saves checkpoints at each iteration
+5. Produces final evaluation report and performance graphs
+
+**Command:**
+
+```bash
+python -m torch_checkers.experiment_single \
+    --iterations 10 \
+    --games-per-iteration 100 \
+    --eval-games 20 \
+    --eval-interval 2
+```
+
+**Full Command-Line Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--iterations` | 10 | Number of training iterations |
+| `--games-per-iteration` | 100 | Self-play games per iteration |
+| `--simulations` | 200 | MCTS simulations per move during training |
+| `--epochs` | 10 | Training epochs per iteration |
+| `--max-moves` | 200 | Maximum moves per game |
+| `--res-blocks` | 10 | Number of residual blocks |
+| `--channels` | 128 | Number of channels in convolutions |
+| `--batch-size` | 256 | Training batch size |
+| `--lr` | 1e-3 | Learning rate |
+| `--eval-games` | 20 | Evaluation games against random player |
+| `--eval-interval` | 1 | Evaluate every N iterations |
+| `--eval-simulations` | 200 | MCTS simulations during evaluation |
+| `--device` | cuda | Device (cuda or cpu) |
+| `--seed` | 42 | Random seed |
+| `--checkpoint` | - | Resume from checkpoint |
+| `--output-dir` | data/single_player_experiment | Output directory |
+| `--debug` | - | Use debug configuration |
+| `--no-progress` | - | Disable progress bars |
+
+**Example with full configuration:**
+
+```bash
+# Long training run with frequent evaluation
+python -m torch_checkers.experiment_single \
+    --iterations 20 \
+    --games-per-iteration 200 \
+    --simulations 400 \
+    --epochs 15 \
+    --res-blocks 15 \
+    --channels 192 \
+    --eval-games 50 \
+    --eval-interval 2 \
+    --output-dir data/long_training
+```
+
+**Output Structure:**
+
+```
+data/single_player_experiment/
+├── checkpoints/
+│   ├── checkpoint_iter1_*.pt
+│   ├── checkpoint_iter2_*.pt
+│   └── final_model_*.pt
+├── data/
+│   ├── selfplay_data_iter1_*.pkl
+│   └── selfplay_data_iter2_*.pkl
+├── logs/
+│   ├── training_*.log
+│   └── evaluation_history_*.png
+└── experiment_results_*.json
+```
+
+---
+
+### Evaluation Against Random Player
+
+Evaluate any trained model against the Random Legal Move baseline player.
+
+**Single Model Evaluation:**
+
+```bash
+python -m torch_checkers.evaluate_vs_random \
+    --model path/to/model.pt \
+    --games 50 \
+    --simulations 200
+```
+
+**Compare Multiple Models:**
+
+```bash
+python -m torch_checkers.evaluate_vs_random \
+    --models model1.pt model2.pt model3.pt \
+    --games 50
+```
+
+**Command-Line Arguments:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--model` | - | Path to single model to evaluate |
+| `--models` | - | Paths to multiple models to compare |
+| `--games` | 50 | Number of evaluation games per model |
+| `--simulations` | 200 | MCTS simulations per move |
+| `--max-moves` | 200 | Maximum moves per game |
+| `--device` | cuda | Device (cuda or cpu) |
+| `--seed` | 42 | Random seed |
+| `--output-dir` | data/evaluation_results | Output directory |
+| `--no-progress` | - | Disable progress bars |
+
+**Output:**
+
+```
+EVALUATION RESULTS: my_model
+
+Overall Performance:
+  Win Rate (including draws as 0.5): 95.0%
+  Pure Win Rate: 94.0%
+  Model Wins: 47
+  Random Wins: 2
+  Draws: 1
+  Total Games: 50
+
+By Position:
+  As Player 1 (first): 24 wins / 25 games
+  As Player 2 (second): 23 wins / 25 games
+
+Game Statistics:
+  Average game length: 82.3 moves
+```
+
+---
+
+### Random Legal Move Player (Benchmark)
+
+The repository includes a `RandomPlayer` class (`torch_checkers/random_player.py`) that selects moves uniformly at random from all legal moves. This provides a baseline for evaluating trained models.
+
+**Usage in Code:**
+
+```python
+from Checkers import Checkers
+from torch_checkers.random_player import RandomPlayer
+
+game = Checkers()
+player = RandomPlayer(game)
+
+while not game.done:
+    next_state, policy, _ = player.get_action(game.state, game.history)
+    game.step(next_state)
+
+print(f"Outcome: {game.outcome}")
+```
+
+**Run Random Player Test:**
+
+```bash
+python -m torch_checkers.random_player
+```
+
+---
+
+### Basic Training (Original PyTorch Pipeline)
+
+For more control over the training process, use the original training script:
+
+```bash
+python -m torch_checkers.train \
+    --iterations 10 \
+    --games 100 \
+    --simulations 200 \
+    --epochs 10 \
+    --batch-size 256 \
+    --res-blocks 10 \
+    --channels 128 \
+    --lr 1e-3
+```
+
+**Full Arguments for `torch_checkers.train`:**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--iterations` | 10 | Training iterations (self-play + train cycles) |
+| `--games` | 100 | Self-play games per iteration |
+| `--simulations` | 200 | MCTS simulations per move |
+| `--max-moves` | 200 | Maximum moves per game |
+| `--epochs` | 10 | Training epochs per iteration |
+| `--batch-size` | 256 | Training batch size |
+| `--lr` | 1e-3 | Learning rate |
+| `--res-blocks` | 10 | Number of residual blocks |
+| `--channels` | 128 | Number of convolution channels |
+| `--device` | cuda | Device (cuda or cpu) |
+| `--seed` | 42 | Random seed |
+| `--workers` | 4 | Data loading workers |
+| `--checkpoint` | - | Resume from checkpoint |
+| `--checkpoint-dir` | data/torch_checkpoints | Checkpoint directory |
+| `--debug` | - | Use debug configuration |
+| `--parallel-simulations` | 1 | Parallel MCTS simulations (batched NN) |
+| `--progress` | True | Show progress bars |
+| `--no-progress` | - | Disable progress bars |
+
+---
+
+### Model Checkpoints
+
+All checkpoints are saved with consistent naming and contain:
+- Model weights (`model_state_dict`)
+- Configuration (`config`)
+- Training metadata (iteration, win rate, etc.)
+
+**Loading a Checkpoint:**
+
+```python
+import torch
+from torch_checkers.config import Config
+from torch_checkers.model import CheckersModel
+
+checkpoint = torch.load('path/to/checkpoint.pt', map_location='cuda')
+config = Config.from_dict(checkpoint['config'])
+model = CheckersModel(config).to('cuda')
+model.load_state_dict(checkpoint['model_state_dict'])
+model.eval()
+```
+
+**Checkpoint Directory Structure:**
+
+```
+data/torch_checkpoints/
+├── best_model.pt              # Best performing model
+├── checkpoint_iter1_*.pt      # Iteration 1 checkpoint
+├── checkpoint_iter2_*.pt      # Iteration 2 checkpoint
+└── ...
+```
+
+---
+
+### Hardware Requirements
+
+| Configuration | GPU VRAM | Recommended Settings |
+|--------------|----------|---------------------|
+| Debug | 2GB+ | `--debug` flag |
+| Small | 8GB | `--res-blocks 6 --channels 64 --batch-size 128` |
+| Default | 16GB | Default settings |
+| Large | 24GB+ | `--res-blocks 15 --channels 192 --batch-size 512` |
+
+---
+
+### Typical Training Times (Estimates)
+
+| Configuration | Per Iteration | 10 Iterations |
+|--------------|---------------|---------------|
+| Debug | ~2 minutes | ~20 minutes |
+| Small (CPU) | ~1 hour | ~10 hours |
+| Default (GPU) | ~30 minutes | ~5 hours |
+| Full (GPU) | ~2 hours | ~20 hours |
+
+*Times vary significantly based on hardware and hyperparameters.*
+
+---
+
 ## Footnotes	
 \* Pygame 2.0+ appears to have some bug that causes Ubuntu to believe that the Pygame GUI is not responding (although it is clearly running) when using the GPU for inferences.  Forcing Keras to use the CPU may resolve the problem, but I recommend using Pygame 1.9.6 if you experience similar issues with newer versions of Pygame.  The GUI font sizes and positioning are optimized for Pygame 1.9.6.
