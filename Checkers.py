@@ -212,6 +212,36 @@ class Checkers:
             return jump_moves # Jumps are mandatory
         return legal_moves
     
+    def _get_landing_position(self, state):
+        """Compute the landing position of a piece from the stored move info.
+        state[14] stores: [layer, start_x, start_y]
+        Returns the (end_x, end_y) position where the piece landed.
+        """
+        layer = int(state[14, 0, 0])
+        start_x = int(state[14, 0, 1])
+        start_y = int(state[14, 0, 2])
+        
+        # Jump moves (layers 10-13)
+        if layer == 13:  # BR jump
+            return (start_x + 2, start_y + 2)
+        elif layer == 12:  # BL jump
+            return (start_x + 2, start_y - 2)
+        elif layer == 11:  # UR jump
+            return (start_x - 2, start_y + 2)
+        elif layer == 10:  # UL jump
+            return (start_x - 2, start_y - 2)
+        # Normal moves (layers 6-9)
+        elif layer == 9:  # BR move
+            return (start_x + 1, start_y + 1)
+        elif layer == 8:  # BL move
+            return (start_x + 1, start_y - 1)
+        elif layer == 7:  # UR move
+            return (start_x - 1, start_y + 1)
+        elif layer == 6:  # UL move
+            return (start_x - 1, start_y - 1)
+        # Default: return start position (should not happen in normal gameplay)
+        return (start_x, start_y)
+    
     def _check_jumps(self,x,y,fwd,state,idx,opp_idx,board,player,is_double_jumping=False):
         """Method intended for internal use.  Checks to see if a jump is 
         possible for a man given its position and the game state.  Function 
@@ -225,9 +255,11 @@ class Checkers:
         jump_moves = []
         more_jumps = []
 
-        last_moved_piece = (state[14,0,1],state[14,0,2])
-        if is_double_jumping and (x,y) != last_moved_piece:
-            return []
+        if is_double_jumping:
+            # Compute landing position from the stored move info
+            last_moved_piece = self._get_landing_position(state)
+            if (x,y) != last_moved_piece:
+                return []
 
         # continue...
         for ydir in range(-1,2,2):
@@ -241,6 +273,18 @@ class Checkers:
                             temp_state[idx,x,y] = 0 # Piece no longer in prev location
                             temp_state[opp_idx,x+fwd,y+ydir] = 0 # Opponent's piece jumped (if man)
                             temp_state[opp_idx+1,x+fwd,y+ydir] = 0 # Opponent's piece jumped (if king)
+                            # Determine the move layer for this jump
+                            if fwd == 1 and ydir == 1: 
+                                move_layer = 13  # BR jump
+                            elif fwd == 1 and ydir == -1:
+                                move_layer = 12  # BL jump
+                            elif fwd == -1 and ydir == 1:
+                                move_layer = 11  # UR jump
+                            else:  # fwd == -1 and ydir == -1
+                                move_layer = 10  # UL jump
+                            # Set temp_state[14] BEFORE recursive call so double jump detection works
+                            temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
+                                move_layer, x, y
                             if (fwd == 1 and x+2*fwd == 7) or \
                                 (fwd == -1 and x+2*fwd == 0): # On King's row, jump is over
                                 temp_state[idx+1,x+2*fwd,y+2*ydir] = 1 # Man is kinged
@@ -254,22 +298,7 @@ class Checkers:
                                 more_jumps = [] # Don't toggle player
                             else:
                                 temp_state[4] = 1 - player # Toggle player
-                            if fwd == 1 and ydir == 1: 
-                                state[13,x,y] = 1 # NN layer representing BR jump
-                                temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
-                                    13, x, y
-                            elif fwd == 1 and ydir == -1:
-                                state[12,x,y] = 1 # NN layer representing BL jump
-                                temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
-                                    12, x, y
-                            elif fwd == -1 and ydir == 1:
-                                state[11,x,y] = 1 # NN layer representing UR jump
-                                temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
-                                    11, x, y
-                            elif fwd == -1 and ydir == -1:
-                                state[10,x,y] = 1 # NN layer representing UL jump
-                                temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
-                                    10, x, y
+                            state[move_layer,x,y] = 1 # NN layer representing this jump
                             jump_moves.append(temp_state)
         return jump_moves
             
@@ -283,9 +312,11 @@ class Checkers:
         jump_moves = []
         more_jumps = []
 
-        last_moved_piece = (state[14,0,1],state[14,0,2])
-        if is_double_jumping and (x,y) != last_moved_piece:
-            return []
+        if is_double_jumping:
+            # Compute landing position from the stored move info
+            last_moved_piece = self._get_landing_position(state)
+            if (x,y) != last_moved_piece:
+                return []
 
         for ydir in range(-1,2,2):
             for fwd in range(-1,2,2):
@@ -300,30 +331,27 @@ class Checkers:
                                 temp_state[opp_idx,x+fwd,y+ydir] = 0 # Opponent's piece jumped (if man)
                                 temp_state[opp_idx+1,x+fwd,y+ydir] = 0 # Opponent's piece jumped (if king)
                                 temp_state[idx+1,x+2*fwd,y+2*ydir] = 1  # Move piece to new location
+                                # Determine the move layer for this jump
+                                if fwd == 1 and ydir == 1: 
+                                    move_layer = 13  # BR jump
+                                elif fwd == 1 and ydir == -1:
+                                    move_layer = 12  # BL jump
+                                elif fwd == -1 and ydir == 1:
+                                    move_layer = 11  # UR jump
+                                else:  # fwd == -1 and ydir == -1
+                                    move_layer = 10  # UL jump
+                                # Set temp_state[14] BEFORE recursive call so double jump detection works
+                                temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
+                                    move_layer, x, y
                                 more_jumps = self._check_king_jumps(x+2*fwd,y+2*ydir,
                                                           temp_state,idx,
-                                                          opp_idx,board,player)
+                                                          opp_idx,board,player,is_double_jumping=True)
                                 if more_jumps:
                                     #jump_moves.extend(more_jumps)
                                     more_jumps = [] # Don't toggle player
                                 else:
                                     temp_state[4] = 1 - player # Toggle player
-                                if fwd == 1 and ydir == 1: 
-                                    state[13,x,y] = 1 # NN layer representing BR jump
-                                    temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
-                                        13, x, y
-                                elif fwd == 1 and ydir == -1:
-                                    state[12,x,y] = 1 # NN layer representing BL jump
-                                    temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
-                                        12, x, y
-                                elif fwd == -1 and ydir == 1:
-                                    state[11,x,y] = 1 # NN layer representing UR jump
-                                    temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
-                                        11, x, y
-                                elif fwd == -1 and ydir == -1:
-                                    state[10,x,y] = 1 # NN layer representing UL jump
-                                    temp_state[14,0,0], temp_state[14,0,1], temp_state[14,0,2] = \
-                                        10, x, y
+                                state[move_layer,x,y] = 1 # NN layer representing this jump
                                 jump_moves.append(temp_state)
         return jump_moves
     
