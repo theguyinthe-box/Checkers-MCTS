@@ -9,6 +9,12 @@
 # This script trains a single Checkers player for a specified number of
 # iterations with comprehensive evaluation and performance tracking.
 #
+# NOTE: For an improved version that demonstrates progressive improvement
+# more reliably, see experiment_progressive.py which:
+# - Uses a fixed learning rate to avoid scheduler resets
+# - Properly maintains optimizer state across iterations
+# - Provides better tracking of cumulative learning
+#
 # Features:
 # - Train one player for N iterations
 # - Evaluate against random player at regular intervals
@@ -371,7 +377,8 @@ def main():
     args = parse_args()
     config = create_config(args)
     
-    # Create directories
+    # Create all directories including the main output directory
+    os.makedirs(args.output_dir, exist_ok=True)
     os.makedirs(config.checkpoint_dir, exist_ok=True)
     os.makedirs(config.data_dir, exist_ok=True)
     os.makedirs(config.log_dir, exist_ok=True)

@@ -39,6 +39,10 @@ env/
 data/torch_checkpoints/
 data/torch_logs/
 data/torch_training_data/
+data/progressive_experiment/
+data/single_player_experiment/
+data/tournament_experiment/
+data/evaluation_results/
 
 # Model files (keep empty directories)
 data/model/*.h5

@@ -673,6 +673,58 @@ data/single_player_experiment/
 
 ---
 
+### Experiment 3: Progressive Training (Recommended)
+
+**NEW:** An improved experiment that demonstrates progressive model improvement reliably.
+
+This experiment addresses issues with learning rate scheduler resets by:
+- Using a fixed learning rate across iterations
+- Maintaining cumulative training data
+- Properly tracking global epochs
+- Preserving optimizer state between training iterations
+
+**Quick Start:**
+
+```bash
+# Debug mode (fast test)
+python -m torch_checkers.experiment_progressive --debug --iterations 5
+
+# Full training run
+python -m torch_checkers.experiment_progressive \
+    --iterations 20 \
+    --games-per-iteration 50 \
+    --simulations 100 \
+    --eval-games 20 \
+    --epochs 5
+```
+
+**Key Features:**
+- Cumulative learning: All self-play data retained and used for training
+- Fixed learning rate: Avoids scheduler issues between iterations
+- Global epoch tracking: Properly counts total training epochs
+- Progress reporting: Shows improvement/regression at each evaluation
+
+**Full Documentation:** See [docs/progressive_training.md](docs/progressive_training.md)
+
+**Expected Output:**
+
+```
+EXPERIMENT SUMMARY
+
+Training iterations: 20
+Total epochs trained: 100
+Final win rate vs random: 85.0%
+
+Progressive Improvement:
+  Initial win rate: 50.0%
+  Final win rate:   85.0%
+  Improvement:      +35.0%
+
+✓ SUCCESS: Model showed progressive improvement during training!
+```
+
+---
+
 ### Evaluation Against Random Player
 
 Evaluate any trained model against the Random Legal Move baseline player.
