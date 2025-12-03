@@ -46,6 +46,7 @@ from datetime import datetime
 from typing import List, Dict, Tuple, Optional
 import numpy as np
 import torch
+import torch.nn.functional as F
 import json
 from tqdm import tqdm
 
@@ -55,7 +56,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from torch_checkers.config import Config, get_debug_config
 from torch_checkers.model import CheckersModel, create_model
 from torch_checkers.mcts import MCTSPlayer
-from torch_checkers.dataset import ReplayBuffer
+from torch_checkers.dataset import ReplayBuffer, create_data_loaders
 from torch_checkers.random_player import RandomPlayer
 from torch_checkers.train import run_self_play
 from torch_checkers.utils import (
@@ -64,6 +65,7 @@ from torch_checkers.utils import (
     save_checkpoint,
     create_timestamp,
     get_gpu_memory_info,
+    AverageMeter,
 )
 
 from Checkers import Checkers
@@ -72,6 +74,8 @@ try:
     from tabulate import tabulate
 except ImportError:
     def tabulate(data, headers=None, tablefmt=None, showindex=None):
+        """Simple fallback tabulate that formats data as tab-separated values."""
+        # Note: tablefmt and showindex are accepted for interface compatibility but not used
         lines = []
         if headers:
             lines.append('\t'.join(str(h) for h in headers))
@@ -234,11 +238,6 @@ class ProgressiveTrainer:
     
     def __init__(self, model: CheckersModel, config: Config):
         """Initialize the progressive trainer."""
-        import torch.nn.functional as F
-        from torch.utils.data import DataLoader
-        from torch_checkers.dataset import CheckersDataset, create_data_loaders, collate_fn
-        from torch_checkers.utils import AverageMeter
-        
         self.model = model.to(config.device)
         self.config = config
         self.device = config.device
@@ -283,10 +282,6 @@ class ProgressiveTrainer:
         Returns:
             Dictionary with training metrics for this iteration.
         """
-        import torch.nn.functional as F
-        from torch_checkers.dataset import create_data_loaders
-        from torch_checkers.utils import AverageMeter
-        
         # Create data loaders
         train_loader, val_loader = create_data_loaders(
             training_data,
